@@ -1,0 +1,17 @@
+{
+  "compileCommand": null,
+  "gateOrder": [
+    "structure",
+    "data",
+    "logic",
+    "ui",
+    "e2e"
+  ],
+  "thresholds": {
+    "structure": 80,
+    "data": 85,
+    "logic": 85,
+    "ui": 70,
+    "e2e": 60
+  }
+}
