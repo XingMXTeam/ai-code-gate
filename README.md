@@ -53,6 +53,32 @@ Example output (abridged):
   VERDICT: FAIL — stopped at gate "canRun".
 ```
 
+## The gates
+
+Scoring and gating are two separate steps. First, **all five dimensions are
+always scored** (structure / data / logic / ui / e2e, each 0–100, starting at
+100 with points deducted per failed check). Then the four named gates are
+evaluated **in order** against those scores. The first failed gate stops the
+run — the remaining gates are reported as `skipped`, and the verdict fails.
+
+| # | Gate | Requires | What it actually means |
+|---|---|---|---|
+| 1 | `canRun` | structure ≥ 85 | The code compiles (when a compile command is configured), respects the architecture's import layers and route isolation, and stays within file/function size limits. If it cannot run, nothing else matters. |
+| 2 | `dataReady` | data ≥ 85 | No hardcoded credentials, no plain `http://` endpoints outside localhost. The data layer is safe to connect. |
+| 3 | `usageRight` | logic ≥ 80 **and** ui ≥ 75 | A compound gate: no `debugger`, no `console.log` residue, no TODO pile-ups — **and** the UI keeps design-token discipline (no raw hex sprawl) and accessibility basics (`alt` on images). Usable by a human, not merely runnable. |
+| 4 | `featureWorks` | e2e ≥ 60 | At least half of the source files (configurable ratio) have a sibling test file. The features are accompanied by verification, not just intention. |
+
+Thresholds above are the defaults; every one of them lives in
+`gate.config.json` together with a written `why`, and the gate list itself —
+ids, order, and which dimensions each gate requires — is configuration, not
+hardcoded. A stricter team raises the numbers; a gate can also pin a
+dimension above its default threshold (e.g. `{"id": "releaseReady",
+"requires": {"e2e": 90}}`).
+
+Verdict: **PASS only if all four gates pass.** The report still shows every
+dimension's score and every failed check after a short-circuit — the gates
+decide, the dimensions explain.
+
 ## What gets checked
 
 | Dimension | Checks |
@@ -138,9 +164,13 @@ in a way "make the code better" never is.
 ## 中文说明
 
 `ai-code-gate` 是给 AI 生成代码用的确定性验收门禁：五个维度打分
-（structure / data / logic / ui / e2e），四个命名关卡按序短路
-（canRun / dataReady / usageRight / featureWorks，其中 usageRight 是
-logic 与 ui 的复合条件）。每个分数都能拆到带证据的命名检查项；跑不了的
+（structure / data / logic / ui / e2e），四个命名关卡按序短路。
+**门禁定义（默认阈值）**：`canRun` = structure ≥ 85（能编译、架构分层
+不破、文件函数不超限）；`dataReady` = data ≥ 85（无硬编码凭证、无明文
+http）；`usageRight` = logic ≥ 80 **且** ui ≥ 75（无调试残留、守 token
+纪律、img 有 alt）；`featureWorks` = e2e ≥ 60（过半源码文件有测试陪伴）。
+维度永远全量打分，关卡按序评、首挂即停，后面的关卡报 skipped；四个
+关卡全过才算 PASS。阈值与关卡定义都在配置文件里、每条带 why。每个分数都能拆到带证据的命名检查项；跑不了的
 检查报 neutral，绝不冒充通过。附带两项治理机制：**保护区**（改门禁配置
 需要人确认，`verify-zone`）与**计划范围守卫**（改动不得超出计划声明的
 可改范围，`scope`）。规则与阈值全部可配，判定过程无 AI 参与。
