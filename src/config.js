@@ -18,17 +18,17 @@ export const DEFAULT_CONFIG = {
   gateOrder: ["structure", "data", "logic", "ui", "e2e"],
 
   thresholds: {
-    structure: 80,
+    structure: 85,
     data: 85,
-    logic: 85,
-    ui: 70,
+    logic: 80,
+    ui: 75,
     e2e: 60,
   },
 
   rules: {
     structure: {
       maxFileLines: 300, // a single file longer than this is a violation
-      maxFunctionLines: 100, // a single function longer than this is a violation
+      maxFunctionLines: 50, // a single function longer than this is a violation
     },
     logic: {
       maxTodosPerFile: 3, // TODO / FIXME / HACK markers tolerated per file

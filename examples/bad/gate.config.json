@@ -8,10 +8,10 @@
     "e2e"
   ],
   "thresholds": {
-    "structure": 80,
+    "structure": 85,
     "data": 85,
-    "logic": 85,
-    "ui": 70,
+    "logic": 80,
+    "ui": 75,
     "e2e": 60
   }
 }

@@ -26,7 +26,7 @@ Example output:
 ```
 ai-code-gate — scanned 2 file(s) in ./examples/bad
 
-  structure  100/100  (threshold 80)  PASS
+  structure  100/100  (threshold 85)  PASS
   data        80/100  (threshold 85)  FAIL
     - src/api.ts:2 [hardcoded-secret] Possible hardcoded credential. Move it to an environment variable.
     - src/api.ts:3 [insecure-url] Plain http:// URL. Use https:// outside local development.
@@ -66,9 +66,9 @@ Run `ai-gate init` to get a `gate.config.json`, then tune:
 {
   "compileCommand": "npx tsc --noEmit",
   "gateOrder": ["structure", "data", "logic", "ui", "e2e"],
-  "thresholds": { "structure": 80, "data": 85, "logic": 85, "ui": 70, "e2e": 60 },
+  "thresholds": { "structure": 85, "data": 85, "logic": 80, "ui": 75, "e2e": 60 },
   "rules": {
-    "structure": { "maxFileLines": 300, "maxFunctionLines": 100 },
+    "structure": { "maxFileLines": 300, "maxFunctionLines": 50 },
     "logic": { "maxTodosPerFile": 3, "forbiddenPatterns": ["\\bdebugger\\b"] },
     "e2e": { "targetTestRatio": 0.5 }
   }
