@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="ai-code-gate logo">
+  <rect x="4" y="4" width="88" height="88" rx="20" fill="#0d3b2e"/>
+  <g fill="#ffffff">
+    <rect x="24" y="24" width="7" height="48" rx="3"/>
+    <rect x="44.5" y="24" width="7" height="48" rx="3"/>
+    <rect x="65" y="24" width="7" height="48" rx="3"/>
+  </g>
+  <path d="M22 55 L41 71 L75 33" fill="none" stroke="#b9f73d" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

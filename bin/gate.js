@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { DEFAULT_CONFIG, mergeConfig } from "../src/config.js";
 import { evaluate, formatReport } from "../src/evaluate.js";
 import { verifyZone } from "../src/zone.js";
@@ -16,7 +16,11 @@ function usage() {
 
 Usage:
   ai-gate [path]                 Score the project at [path] (default: .)
-  ai-gate init [path]            Write a default gate.config.json
+  ai-gate init [path] [--with-kit]
+                                 Write a default gate.config.json.
+                                 --with-kit also installs the template kit
+                                 (plan.md, design-tokens.json, locales/,
+                                 e2e-results.json, ui-evidence/, TEMPLATE.md)
   ai-gate verify-zone [path]     Block if protected files changed without
                                  GATE_HUMAN_CONFIRM=yes
   ai-gate scope <plan.md> [path] Block if changes fall outside the plan's
@@ -47,6 +51,41 @@ function loadConfig(root) {
 
 if (command === "init") {
   const target = resolve(positional[1] || ".");
+  if (args.includes("--with-kit")) {
+    const kitDir = join(
+      dirname(new URL(import.meta.url).pathname),
+      "..",
+      "templates",
+      "nextjs-harness"
+    );
+    const kitFiles = [
+      "gate.config.json",
+      "plan.md",
+      "design-tokens.json",
+      "locales/en.json",
+      "e2e-results.json",
+      "ui-evidence/.gitkeep",
+      "TEMPLATE.md",
+    ];
+    let copied = 0;
+    for (const rel of kitFiles) {
+      const dest = join(target, rel);
+      if (existsSync(dest)) {
+        console.log(`kept existing ${rel}`);
+        continue;
+      }
+      mkdirSync(dirname(dest), { recursive: true });
+      writeFileSync(dest, readFileSync(join(kitDir, rel)));
+      console.log(`wrote ${rel}`);
+      copied++;
+    }
+    console.log(
+      copied > 0
+        ? "\nKit installed. Open TEMPLATE.md and replace every path, glob and threshold with your own."
+        : "\nNothing copied — all kit files already exist."
+    );
+    process.exit(0);
+  }
   const file = join(target, "gate.config.json");
   if (existsSync(file)) {
     console.error(`gate.config.json already exists at ${file}`);

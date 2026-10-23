@@ -1,0 +1,12 @@
+{
+  "--color-bg": "#ffffff",
+  "--color-surface": "#f6f7f8",
+  "--color-text": "#1a1a1a",
+  "--color-accent": "#0a7c42",
+  "--color-danger": "#c62f3b",
+  "--spacing-sm": "8px",
+  "--spacing-md": "16px",
+  "--spacing-lg": "24px",
+  "--radius-md": "8px",
+  "--font-size-md": "14px"
+}

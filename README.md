@@ -1,4 +1,15 @@
+<p align="center">
+  <img src="assets/logo.svg" width="96" height="96" alt="ai-code-gate logo">
+</p>
+
 # ai-code-gate
+
+<p align="center">
+  <a href="https://github.com/XingMXTeam/ai-code-gate/actions/workflows/ci.yml"><img src="https://github.com/XingMXTeam/ai-code-gate/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
+  <img src="https://img.shields.io/badge/node-%3E%3D18-brightgreen" alt="Node >= 18">
+  <img src="https://img.shields.io/badge/dependencies-zero-blue" alt="Zero dependencies">
+  <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT license">
+</p>
 
 **Deterministic quality gates for AI-generated code.**
 
@@ -27,7 +38,30 @@ thought of. `ai-code-gate` sits in between, and it is built around four ideas:
 npx ai-code-gate            # score the current project
 npx ai-code-gate --json     # machine-readable report for CI
 npx ai-code-gate init       # write a default gate.config.json
+npx ai-code-gate init --with-kit
+                            # install the full starter kit (see Templates)
 ```
+
+## Templates
+
+`templates/nextjs-harness/` is a complete starter kit modeled on a real
+Next.js project run under an AI harness workflow. `init --with-kit` copies
+it into your project (never overwriting existing files):
+
+- `gate.config.json` — thresholds with reasons, the four gates, architecture
+  layer rules (`src/lib`, `src/hooks`, `src/components` must not import
+  `src/app/**`), route isolation, protected paths, and all inputs wired
+- `plan.md` — plan skeleton with an *Editable scope* section and a
+  functional-point (FP) list in the format the checks consume
+- `design-tokens.json` — token source skeleton (`--color-*`, `--spacing-*`, …)
+- `locales/en.json` — i18n resource skeleton
+- `e2e-results.json` — the `{passed, failed}` file your test runner rewrites
+- `TEMPLATE.md` — a replace-checklist: every template value, where it lives,
+  and what to substitute with your own
+
+The kit is a starting shape, not a standard: swap in your directories, your
+token source, your plan format locations, then tighten thresholds one at a
+time.
 
 Exit codes: `0` pass · `1` a gate failed or a guard blocked · `2` usage error.
 

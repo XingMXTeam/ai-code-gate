@@ -5,7 +5,9 @@ import { dirname, join } from "node:path";
 import { mergeConfig, globMatch } from "../src/config.js";
 import { evaluate } from "../src/evaluate.js";
 import { parseEditableScope, matchScope } from "../src/scope.js";
-import { readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ex = (name) => join(here, "..", "examples", name);
@@ -98,4 +100,27 @@ test("e2e is scored from real run results when provided", () => {
   const e2eCheck = good.dimensions.e2e.checks.find((c) => c.name === "e2e-results");
   assert.equal(e2eCheck.passed, true);
   assert.equal(good.dimensions.e2e.score, 100);
+});
+
+test("template kit config loads and init --with-kit installs it", () => {
+  const kitDir = join(here, "..", "templates", "nextjs-harness");
+  const cfg = mergeConfig(
+    JSON.parse(readFileSync(join(kitDir, "gate.config.json"), "utf8"))
+  );
+  assert.equal(cfg.gates.length, 4);
+  assert.ok(cfg.inputs.plan && cfg.inputs.designTokens && cfg.inputs.e2eResults);
+
+  const tmp = mkdtempSync(join(tmpdir(), "gate-kit-"));
+  const bin = join(here, "..", "bin", "gate.js");
+  const run = spawnSync("node", [bin, "init", tmp, "--with-kit"], {
+    encoding: "utf8",
+  });
+  assert.equal(run.status, 0, run.stderr);
+  for (const rel of ["gate.config.json", "plan.md", "design-tokens.json", "locales/en.json", "TEMPLATE.md"]) {
+    assert.ok(existsSync(join(tmp, rel)), `kit file ${rel} installed`);
+  }
+  // A kit-installed empty project evaluates without crashing (inputs are
+  // skeletons: e2e results are 0/0 = neutral, not a crash).
+  const report = evaluate(tmp, cfg);
+  assert.ok(report.dimensions.e2e);
 });

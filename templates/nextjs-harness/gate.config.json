@@ -1,0 +1,117 @@
+{
+  "_about": "Template based on a Next.js + AI-harness workflow project shape. Copy the kit with `gate init --with-kit`, then replace every path and glob with your own. See TEMPLATE.md.",
+  "dimensions": {
+    "structure": {
+      "threshold": 85,
+      "why": "Code that cannot compile or that breaks the architecture cannot ship. Keep this gate strict."
+    },
+    "data": {
+      "threshold": 85,
+      "why": "Hardcoded credentials and missing i18n keys are production incidents, not style issues."
+    },
+    "logic": {
+      "threshold": 80,
+      "why": "Every functional point in the plan must be traceable in code; debug residue means unfinished work."
+    },
+    "ui": {
+      "threshold": 75,
+      "why": "Token discipline and basic accessibility. Looser than structure because UI debt is recoverable."
+    },
+    "e2e": {
+      "threshold": 60,
+      "why": "Starts lenient; raise it once real run results (inputs.e2eResults) are wired in."
+    }
+  },
+  "gates": [
+    {
+      "id": "canRun",
+      "requires": {
+        "structure": 85
+      }
+    },
+    {
+      "id": "dataReady",
+      "requires": {
+        "data": 85
+      }
+    },
+    {
+      "id": "usageRight",
+      "requires": {
+        "logic": 80,
+        "ui": 75
+      }
+    },
+    {
+      "id": "featureWorks",
+      "requires": {
+        "e2e": 60
+      }
+    }
+  ],
+  "rules": {
+    "structure": {
+      "maxFileLines": 300,
+      "maxFunctionLines": 50,
+      "compileCommand": "npm run build",
+      "architectureLayers": [
+        {
+          "from": "src/lib/**",
+          "mustNotImport": "src/app/**",
+          "why": "The library layer must not depend on routes; routes depend on the library."
+        },
+        {
+          "from": "src/hooks/**",
+          "mustNotImport": "src/app/**",
+          "why": "Hooks are shared primitives; route components are not importable from them."
+        },
+        {
+          "from": "src/components/**",
+          "mustNotImport": "src/app/**",
+          "why": "Shared components stay route-agnostic so they can be reused and tested in isolation."
+        }
+      ],
+      "routeIsolation": {
+        "appDir": "src/app"
+      }
+    },
+    "data": {
+      "secretPattern": "(api[_-]?key|secret|passwd|password|token)\\s*[:=]\\s*[\"'][^\"'\\s]{8,}[\"']"
+    },
+    "logic": {
+      "forbiddenPatterns": [
+        "debugger"
+      ],
+      "maxConsoleLogs": 0,
+      "maxTodos": 3
+    },
+    "ui": {
+      "tokenFiles": [
+        "design-tokens.json",
+        "src/styles/**"
+      ],
+      "maxInlineStyles": 5,
+      "maxRawHexOutsideTokens": 0
+    },
+    "e2e": {
+      "minTestRatio": 0.5
+    }
+  },
+  "protectedPaths": [
+    "gate.config.json",
+    ".github/**"
+  ],
+  "inputs": {
+    "plan": "plan.md",
+    "designTokens": "design-tokens.json",
+    "i18n": {
+      "resources": [
+        "locales/en.json"
+      ]
+    },
+    "e2eResults": "e2e-results.json",
+    "uiEvidenceDir": "ui-evidence",
+    "uiEvidenceMinBytes": 8192
+  },
+  "exemptions": []
+}
