@@ -1,3 +1,5 @@
+<p align="right"><strong>English</strong> · <a href="./README.zh-CN.md">简体中文</a></p>
+
 <p align="center">
   <img src="assets/logo.svg" width="96" height="96" alt="ai-code-gate logo">
 </p>
@@ -217,19 +219,9 @@ stake), re-runs, and stops when the gates clear. Because the report is
 deterministic and decomposed into checks, "fix the gate" is a well-posed task
 in a way "make the code better" never is.
 
-## 中文说明
+## Other languages
 
-`ai-code-gate` 是给 AI 生成代码用的确定性验收门禁：五个维度打分
-（structure / data / logic / ui / e2e），四个命名关卡按序短路。
-**门禁定义（默认阈值）**：`canRun` = structure ≥ 85（能编译、架构分层
-不破、文件函数不超限）；`dataReady` = data ≥ 85（无硬编码凭证、无明文
-http）；`usageRight` = logic ≥ 80 **且** ui ≥ 75（无调试残留、守 token
-纪律、img 有 alt）；`featureWorks` = e2e ≥ 60（过半源码文件有测试陪伴）。
-维度永远全量打分，关卡按序评、首挂即停，后面的关卡报 skipped；四个
-关卡全过才算 PASS。阈值与关卡定义都在配置文件里、每条带 why。每个分数都能拆到带证据的命名检查项；跑不了的
-检查报 neutral，绝不冒充通过。附带两项治理机制：**保护区**（改门禁配置
-需要人确认，`verify-zone`）与**计划范围守卫**（改动不得超出计划声明的
-可改范围，`scope`）。规则与阈值全部可配，判定过程无 AI 参与。
+- [简体中文](README.zh-CN.md)
 
 ## Development
 
