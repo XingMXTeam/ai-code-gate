@@ -1,5 +1,5 @@
 // Generated helper for talking to the promo service. Do not edit by hand.
-const apiKey = "FAKE-EXAMPLE-KEY-000000";
+const apiKey = "PLACEHOLDER-NOT-A-REAL-KEY";
 const baseUrl = "http://api.internal-promo.example.com/v1";
 
 export async function fetchCampaign(id) {

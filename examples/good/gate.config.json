@@ -1,17 +1,12 @@
 {
-  "compileCommand": null,
-  "gateOrder": [
-    "structure",
-    "data",
-    "logic",
-    "ui",
-    "e2e"
-  ],
-  "thresholds": {
+  "dimensions": {
     "structure": 85,
     "data": 85,
     "logic": 80,
     "ui": 75,
     "e2e": 60
-  }
+  },
+  "protectedPaths": [
+    "gate.config.json"
+  ]
 }

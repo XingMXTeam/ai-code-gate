@@ -1,55 +1,107 @@
-// Default configuration for ai-code-gate.
-// Every value here can be overridden in a project's gate.config.json.
+// ai-code-gate configuration.
+//
+// The model: five scored dimensions, and named gates on top of them.
+// A gate is a compound condition over dimension scores ("usageRight" needs
+// logic AND ui). Gates run in order and the run short-circuits at the first
+// failed gate — dimensions are always all scored, but later gates are
+// reported as skipped, mirroring how a delivery pipeline behaves.
 
 export const DEFAULT_CONFIG = {
-  // File extensions treated as source code.
   extensions: [".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"],
-
-  // Directories never scanned.
   ignore: ["node_modules", ".git", "dist", "build", "coverage", ".next"],
 
-  // Optional pre-gate: a shell command that must exit 0 before scoring starts
-  // (e.g. "npm run build" or "npx tsc --noEmit"). Null disables it.
+  // Optional pre-check: a shell command that must exit 0. When it is not
+  // configured, the compile check reports as "neutral" instead of passing
+  // silently — an unverified check must never look verified.
   compileCommand: null,
 
-  // Gates run in this order. The first gate below its threshold stops the run
-  // and all later gates are reported as "skipped" — fail fast, fix the
-  // cheapest problem first.
-  gateOrder: ["structure", "data", "logic", "ui", "e2e"],
-
-  thresholds: {
-    structure: 85,
-    data: 85,
-    logic: 80,
-    ui: 75,
-    e2e: 60,
+  dimensions: {
+    structure: {
+      threshold: 85,
+      why: "If the code does not compile and does not respect the architecture, every later score is meaningless.",
+    },
+    data: {
+      threshold: 85,
+      why: "Credentials and endpoints are where generated code is most confidently wrong.",
+    },
+    logic: {
+      threshold: 80,
+      why: "Leftover debug output and deferred TODOs are unfinished work pretending to be done.",
+    },
+    ui: {
+      threshold: 75,
+      why: "Cosmetic drift is tolerable; a broken design-token discipline is not.",
+    },
+    e2e: {
+      threshold: 60,
+      why: "Untested generated code is a promise, not a result. The bar starts modest and should rise over time.",
+    },
   },
+
+  // Named gates, evaluated in order. `requires` maps a dimension to the
+  // minimum score it must reach (default: that dimension's threshold).
+  gates: [
+    { id: "canRun", requires: { structure: null } },
+    { id: "dataReady", requires: { data: null } },
+    { id: "usageRight", requires: { logic: null, ui: null } },
+    { id: "featureWorks", requires: { e2e: null } },
+  ],
 
   rules: {
     structure: {
-      maxFileLines: 300, // a single file longer than this is a violation
-      maxFunctionLines: 50, // a single function longer than this is a violation
+      maxFileLines: 300,
+      maxFunctionLines: 50,
+      // Architecture layer rules. `from`/`to` are path globs over
+      // project-relative paths; an import whose resolved path matches `to`
+      // from a file matching `from` is a violation. Empty = disabled.
+      importRules: [
+        {
+          from: "src/lib/**",
+          to: "src/app/**",
+          message: "Low-level lib code must not depend on app-layer modules. Move the shared piece down, not the dependency up.",
+        },
+        {
+          from: "src/hooks/**",
+          to: "src/app/**",
+          message: "Global hooks must not depend on app-layer modules.",
+        },
+      ],
+      // Next.js-style route isolation: files under src/app/<route>/ may not
+      // import from a sibling route; shared dirs are exempt.
+      crossRoute: {
+        root: "src/app",
+        sharedDirs: ["api", "_components"],
+      },
     },
     logic: {
-      maxTodosPerFile: 3, // TODO / FIXME / HACK markers tolerated per file
-      forbiddenPatterns: ["\\bdebugger\\b"], // regexes that must never appear
+      maxTodosPerFile: 3,
+      forbiddenPatterns: ["\\bdebugger\\b"],
     },
     data: {
-      // string literals that look like credentials assigned in code
       secretPattern:
         "(api[_-]?key|secret|password|token)\\s*[:=]\\s*['\"][^'\"]{8,}['\"]",
-      allowHttpLocalhost: true, // http://localhost and http://127.0.0.1 are fine
+      allowHttpLocalhost: true,
     },
     ui: {
-      maxInlineStylesPerFile: 5, // style={{ ... }} occurrences tolerated per JSX file
+      maxInlineStylesPerFile: 5,
+      // Raw hex colors outside design-token files break the token system:
+      // the value looks right and silently forks the palette.
+      maxRawHexPerFile: 3,
+      tokenFilePatterns: ["**/tokens/**", "**/theme/**", "**/*.tokens.*"],
     },
     e2e: {
-      // Share of source files that must have a sibling test file
-      // (foo.ts -> foo.test.ts / foo.spec.ts in the same folder, or a test
-      // with the same base name anywhere under a tests/ or __tests__/ folder).
       targetTestRatio: 0.5,
     },
   },
+
+  // Explicit, reviewable exceptions: { path (glob), rules: [names] or ["*"],
+  // reason }. An exemption without a reason is just a hole.
+  exemptions: [],
+
+  // Files an automated agent must not change without a human confirmation
+  // (see `ai-gate verify-zone`). Typically: this config, the gate itself,
+  // CI definitions.
+  protectedPaths: ["gate.config.json"],
 };
 
 export function mergeConfig(userConfig = {}) {
@@ -58,13 +110,35 @@ export function mergeConfig(userConfig = {}) {
   if (userConfig.ignore) merged.ignore = userConfig.ignore;
   if (userConfig.compileCommand !== undefined)
     merged.compileCommand = userConfig.compileCommand;
-  if (userConfig.gateOrder) merged.gateOrder = userConfig.gateOrder;
-  if (userConfig.thresholds)
-    Object.assign(merged.thresholds, userConfig.thresholds);
+  if (userConfig.gates) merged.gates = userConfig.gates;
+  if (userConfig.exemptions) merged.exemptions = userConfig.exemptions;
+  if (userConfig.protectedPaths) merged.protectedPaths = userConfig.protectedPaths;
+  if (userConfig.dimensions) {
+    for (const [dim, entry] of Object.entries(userConfig.dimensions)) {
+      if (typeof entry === "number") merged.dimensions[dim].threshold = entry;
+      else Object.assign(merged.dimensions[dim], entry);
+    }
+  }
   if (userConfig.rules) {
     for (const dim of Object.keys(userConfig.rules)) {
       merged.rules[dim] = { ...merged.rules[dim], ...userConfig.rules[dim] };
     }
   }
   return merged;
+}
+
+// Minimal glob: `**` spans directories, `*` spans one segment.
+export function globToRegExp(glob) {
+  const escaped = glob
+    .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+    .replace(/\*\*\//g, "")
+    .replace(/\*\*/g, "")
+    .replace(/\*/g, "[^/]*")
+    .replace(//g, "(.*/)?")
+    .replace(//g, ".*");
+  return new RegExp(`^${escaped}$`);
+}
+
+export function globMatch(glob, path) {
+  return globToRegExp(glob).test(path);
 }
