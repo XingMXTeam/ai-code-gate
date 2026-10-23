@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Unit tests
+        run: npm test
+      - name: Gate passes on the good example
+        run: node bin/gate.js examples/good
+      - name: Gate rejects the bad example
+        run: |
+          if node bin/gate.js examples/bad > /dev/null; then
+            echo "examples/bad unexpectedly PASSED the gate"
+            exit 1
+          fi
+          echo "examples/bad correctly rejected"
