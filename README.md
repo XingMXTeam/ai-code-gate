@@ -215,6 +215,16 @@ stake), re-runs, and stops when the gates clear. Because the report is
 deterministic and decomposed into checks, "fix the gate" is a well-posed task
 in a way "make the code better" never is.
 
+## Background
+
+This tool grew out of a harness-engineering workflow for AI-assisted
+frontend development: prompts and context alone do not make AI-written
+code safe to merge - you need a feedback site that exposes errors
+deterministically. The longer write-up (in Chinese) is here:
+[AI 写代码，最缺的不是 Prompt，而是一个能暴露错误的现场](https://maoxunxing.com/zh-cn/harness-engineering-ai-frontend/)
+
+More tools and writing from the same author: [maoxunxing.com](https://maoxunxing.com/)
+
 ## Other languages
 
 - [简体中文](README.zh-CN.md)

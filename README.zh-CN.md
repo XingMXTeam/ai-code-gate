@@ -177,6 +177,15 @@ npm run demo:bad
 npm run demo:good
 ```
 
+## 背景
+
+这个工具源自一套 AI 前端开发的 Harness Engineering（驾驭工程）工作流：
+只靠 Prompt 和上下文，AI 写的代码并不敢直接合并——真正缺的是一个能
+确定性地暴露错误的反馈现场。完整长文见：
+[AI 写代码，最缺的不是 Prompt，而是一个能暴露错误的现场](https://maoxunxing.com/zh-cn/harness-engineering-ai-frontend/)
+
+作者的更多工具与文章：[maoxunxing.com](https://maoxunxing.com/)
+
 ## 许可证
 
 MIT
