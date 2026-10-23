@@ -23,6 +23,11 @@ AI 写代码很快，难的是判断它写出来的东西能不能上线。Lint 
 ```bash
 npx ai-code-gate            # 给当前项目打分
 npx ai-code-gate --json     # 机器可读的报告，供 CI 使用
+npx ai-code-gate --history .gate-history
+                            # 把本次运行追加进历史目录，并打印
+                            # 与上一次运行对比的趋势
+npx ai-code-gate --report report.json
+                            # 同时把 JSON 报告写到指定路径
 npx ai-code-gate init       # 生成默认的 gate.config.json
 npx ai-code-gate init --with-kit
                             # 安装完整入门模板包（见「模板」一节）
@@ -36,7 +41,7 @@ npx ai-code-gate init --with-kit
 - `plan.md`——计划骨架，带「可改范围」一节和检查直接消费的功能点（FP）清单格式
 - `design-tokens.json`——设计 token 源骨架（`--color-*`、`--spacing-*` 等）
 - `locales/en.json`——i18n 资源骨架
-- `e2e-results.json`——由你的测试运行器每次改写的 `{passed, failed}` 文件
+- `e2e-results.json`——由你的测试运行器每次改写的结果文件（简单的 `{passed, failed}` 形态，或 Jest/Vitest/Playwright 的原生 JSON 报告，三种格式自动识别）
 - `TEMPLATE.md`——替换清单：每个模板值在哪、该换成你自己的什么
 
 模板是起点形态，不是标准答案：换上你的目录、你的 token 源、你的计划位置，再逐个收紧阈值。
@@ -74,7 +79,7 @@ npm run demo:good   # 四关全过
 | 1 | `canRun` | structure ≥ 85 | 代码能编译（配置了编译命令时）、守架构的 import 分层与路由隔离、文件与函数不超限。跑都跑不起来，后面免谈。 |
 | 2 | `dataReady` | data ≥ 85 | 没有硬编码凭证、localhost 之外没有明文 `http://` 接口。数据层接得安全。 |
 | 3 | `usageRight` | logic ≥ 80 **且** ui ≥ 75 | 复合关：没有 `debugger`、没有 `console.log` 残留、TODO 不堆积——**并且** UI 守设计 token 纪律（不用裸 hex 色值）、满足无障碍底线（图片有 `alt`）。是「能给人用」，不只是「能跑」。 |
-| 4 | `featureWorks` | e2e ≥ 60 | 至少一半源码文件（比例可配）有配套测试文件。功能是被验证过的，不只是写完的。 |
+| 4 | `featureWorks` | e2e ≥ 60 | 真实证据的组合分：真实测试运行的通过率（权重 0.6）、istanbul 覆盖率（0.25）、测试文件存在性（0.15），按实际提供的工件重新归一化。功能是被验证过的，不只是写完的。 |
 
 以上是默认阈值；每一个都写在 `gate.config.json` 里并附有 `why`（为什么是这个数），关卡本身——id、顺序、每关要求哪些维度——也都是配置，不是写死的。更严格的团队调高数字；关卡也可以把某个维度钉在高于默认的阈值上（例如 `{"id": "releaseReady", "requires": {"e2e": 90}}`）。
 
@@ -92,21 +97,26 @@ npm run demo:good   # 四关全过
 | **计划文档**（`inputs.plan`） | logic、范围守卫 | 功能点（FP）覆盖：计划里的每个 FP id 必须在代码/测试中被引用；也提供计划声明的可改范围 |
 | **设计 token 源**（`inputs.designTokens`） | ui | 代码里用的每个 `var(--x)` 必须在 token 源中真实存在（`.json` 用 `--name` 键，或声明了 `--var` 的 `.css`） |
 | **i18n 资源**（`inputs.i18n.resources`） | data | 代码里调用的每个 i18n key 都在语言资源中存在；storage key 符合 `{page}.{entity}.{field}` 命名空间形态 |
-| **E2E 运行结果**（`inputs.e2eResults`） | e2e | 一次真实运行的结局（`{"passed": n, "failed": n}`）。没有它时，e2e 退化为只查测试文件*存在性*，并会明说 |
+| **测试运行结果**（`inputs.testResults`；旧名 `inputs.e2eResults` 仍可用） | e2e | 一次真实运行的结局，三种格式自动识别：`{"passed": n, "failed": n}`、Jest/Vitest 的 JSON 报告、Playwright 的 JSON 报告。没有它时，运行信号缺席，报告会明说 |
+| **覆盖率摘要**（`inputs.coverage`） | e2e | istanbul 的 `coverage-summary.json`；其平均覆盖率作为辅助信号并入 e2e 组合分 |
 | **UI 证据截图**（`inputs.uiEvidenceDir`） | ui | 通过结论有截图为据；小于 `uiEvidenceMinBytes`（默认 8192）的 PNG 是空白页，不是证据 |
 | **Git 工作区** | verify-zone、scope | 哪些文件被改了——供保护区与计划范围两个守卫核对 |
 
 经验法则：**一个维度只和它的输入一样强。** 只有源码时你得到的是结构与模式检查；每补一份工件（计划、token、资源、运行结果、截图），就多一个「未验证」变成真判定。
 
+## 检查如何读代码
+
+检查从不对原始文本做模式匹配。每个文件先被约简为三个位置保持不变的视图——**代码视图**（字符串/模板内容、注释、正则字面量都抹成空格；模板里的 `${...}` 表达式保留，因为那是真代码）、**注释视图**、**字符串视图**——外加一张全部字符串字面量的表。模式类检查跑在代码视图上，字符串或注释里的一句话再也伪造不出违规；主题本身活在字面量里的检查（URL、storage key、i18n key、hex 色值）则直接读字面量表。函数长度来自定界符配对的真实跨度；import 构成解析后的图（`tsconfig`/`jsconfig` 的 `paths` 别名、扩展名与 index 探测、`require()` 与动态 `import()` 都在图里）——循环依赖检测也由此而来。`.vue`/`.svelte` 文件会先抽出 `<script>` 块（行号保持不变）再分析。
+
 ## 检查项一览
 
 | 维度 | 检查内容 |
 |---|---|
-| **structure** | 编译命令（配置了才跑，否则 neutral）、`any` / `@ts-ignore` 压制、文件/函数长度（超限按文件类型给拆分建议）、**架构 import 规则**（配置驱动的分层方向）、`src/app/<route>/` 布局的**路由隔离** |
-| **data** | 硬编码凭证、localhost 之外的明文 `http://`、对照语言资源的 **i18n key 完整性**、**storage key 命名空间**形态 |
-| **logic** | 禁用模式（默认 `debugger`）、残留 `console.log`、TODO/FIXME 堆积、**计划功能点（FP）覆盖** |
-| **ui** | `<img>` 缺 `alt`、内联样式泛滥、**设计 token 文件之外的裸 hex 色值**、**token 有效性**（`var(--x)` 必须在 token 源中存在）、**截图证据真实性**（空白页识别） |
-| **e2e** | 提供了运行结果时按**真实结果**（`{passed, failed}`）计分；否则按有配套测试的源码文件占比计分，并标注为仅查存在性 |
+| **structure** | 编译命令（配置了才跑，否则 neutral）、`any` / `@ts-ignore` 压制（压制指令只有居于注释行首才计数——注释里顺口提一句不算）、文件/函数长度（超限按文件类型给拆分建议）、基于解析后 import 图的**架构 import 规则**、`src/app/<route>/` 布局的**路由隔离**、**循环依赖检测** |
+| **data** | 硬编码凭证、localhost 之外的明文 `http://`（在字面量内容里匹配——注释里提到的 URL 不是接口）、对照语言资源的 **i18n key 完整性**、**storage key 命名空间**形态 |
+| **logic** | 禁用模式（默认 `debugger`）、残留 `console.log`、TODO/FIXME 堆积（在注释里计数，那才是它们待的地方）、**计划功能点（FP）覆盖** |
+| **ui** | `<img>` 缺 `alt`、内联样式泛滥、**设计 token 文件之外的裸 hex 色值**、**token 有效性**（`var(--x)` 必须在 token 源中存在——喂给门禁的应是构建真正消费的那份工件，如编译后的 CSS，而不是它读不懂的源格式）、**截图证据真实性**（空白页识别） |
+| **e2e** | 最多三个信号的组合分——**运行**通过率（真实测试结果工件，0.6）、**覆盖率**均值（istanbul，0.25）、测试文件**存在性**（0.15）；权重可在 `rules.e2e.weights` 配置，按在场信号重新归一化；每个信号都是一条命名检查，扣分精确对应它的份额 |
 
 ## 配置
 
@@ -139,6 +149,16 @@ npm run demo:good   # 四关全过
 ```
 
 每个维度阈值都带一条 `why`——说不清理由的质量线，没人会去捍卫。豁免必须有路径、规则名和理由；被豁免的检查在报告里以 *neutral* 出现，看得见，只是不计分。
+
+另有两个顶层设置：`exclude`——整体移出评分的 glob（夹具、住在被扫描目录里的生成物）；`historyDir`——运行历史累积的目录（见下一节）。
+
+## 历史与趋势
+
+```bash
+ai-gate --history .gate-history     # 或在配置里写 "historyDir"
+```
+
+每次运行把完整的 JSON 报告以时间戳文件名追加进历史目录——历史文件永不覆写——文本报告随之多出一段**趋势**：与上一次运行逐维对比 Δ、总分 Δ、关卡结论变化（`FAIL@canRun -> PASS` 会被显眼标注）。`--report <path>` 另把本次报告写到指定路径。看不见移动的质量，等于在猜。
 
 ## 保护区
 
@@ -175,7 +195,10 @@ ai-gate scope plan.md
 npm test          # 跑测试套件
 npm run demo:bad
 npm run demo:good
+npm run gate:self # 门禁给本仓库自己打分
 ```
+
+本仓库用门禁管自己：根目录 `gate.config.json` 跑公开默认阈值（夹具与模板排除在外；CLI 自己的 stdout 登记为豁免——对命令行工具来说，打印就是产品本身），且测试套件里有一条用例断言自评必须 PASS——CI 会强制执行。门禁还拿一个真实生产项目做过校准，完整记录——包括两条被证明是门禁自己的错、并已修复的发现——在 [docs/calibration.md](docs/calibration.md)（英文）。
 
 ## 背景
 

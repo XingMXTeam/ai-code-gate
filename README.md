@@ -35,6 +35,11 @@ thought of. `ai-code-gate` sits in between, and it is built around four ideas:
 ```bash
 npx ai-code-gate            # score the current project
 npx ai-code-gate --json     # machine-readable report for CI
+npx ai-code-gate --history .gate-history
+                            # append this run to a history directory
+                            # and print a trend vs the previous run
+npx ai-code-gate --report report.json
+                            # also write the JSON report to a path
 npx ai-code-gate init       # write a default gate.config.json
 npx ai-code-gate init --with-kit
                             # install the full starter kit (see Templates)
@@ -53,7 +58,9 @@ it into your project (never overwriting existing files):
   functional-point (FP) list in the format the checks consume
 - `design-tokens.json` — token source skeleton (`--color-*`, `--spacing-*`, …)
 - `locales/en.json` — i18n resource skeleton
-- `e2e-results.json` — the `{passed, failed}` file your test runner rewrites
+- `e2e-results.json` — the results file your test runner rewrites (the
+  simple `{passed, failed}` shape, or a native Jest/Vitest/Playwright
+  JSON report — all three are auto-detected)
 - `TEMPLATE.md` — a replace-checklist: every template value, where it lives,
   and what to substitute with your own
 
@@ -98,7 +105,7 @@ run — the remaining gates are reported as `skipped`, and the verdict fails.
 | 1 | `canRun` | structure ≥ 85 | The code compiles (when a compile command is configured), respects the architecture's import layers and route isolation, and stays within file/function size limits. If it cannot run, nothing else matters. |
 | 2 | `dataReady` | data ≥ 85 | No hardcoded credentials, no plain `http://` endpoints outside localhost. The data layer is safe to connect. |
 | 3 | `usageRight` | logic ≥ 80 **and** ui ≥ 75 | A compound gate: no `debugger`, no `console.log` residue, no TODO pile-ups — **and** the UI keeps design-token discipline (no raw hex sprawl) and accessibility basics (`alt` on images). Usable by a human, not merely runnable. |
-| 4 | `featureWorks` | e2e ≥ 60 | At least half of the source files (configurable ratio) have a sibling test file. The features are accompanied by verification, not just intention. |
+| 4 | `featureWorks` | e2e ≥ 60 | A composite of real evidence: an actual test run's pass rate (weight 0.6), istanbul coverage (0.25), and test-file presence (0.15) — renormalized over whichever artifacts you provide. Features are accompanied by verification, not just intention. |
 
 Thresholds above are the defaults; every one of them lives in
 `gate.config.json` together with a written `why`, and the gate list itself —
@@ -124,7 +131,8 @@ set is:
 | **Plan document** (`inputs.plan`) | logic, scope guard | Functional-point (FP) coverage: every FP id in the plan must be referenced in code/tests; also the plan's declared editable scope |
 | **Design-token source** (`inputs.designTokens`) | ui | Every `var(--x)` used in code must exist in the token source (`.json` with `--name` keys, or `.css` with `--var` declarations) |
 | **i18n resources** (`inputs.i18n.resources`) | data | Every i18n key called in code exists in the locale resources; storage keys follow a `{page}.{entity}.{field}` namespace shape |
-| **E2E results** (`inputs.e2eResults`) | e2e | A real run's outcome (`{"passed": n, "failed": n}`). Without it, e2e falls back to test-file *presence* and says so |
+| **Test results** (`inputs.testResults`; legacy name `inputs.e2eResults`) | e2e | A real run's outcome, auto-detected in three formats: `{"passed": n, "failed": n}`, a Jest/Vitest JSON report, or a Playwright JSON report. Without it, the run signal is absent and the report says so |
+| **Coverage summary** (`inputs.coverage`) | e2e | An istanbul `coverage-summary.json`; its mean percentage feeds the e2e composite as a supporting signal |
 | **UI evidence screenshots** (`inputs.uiEvidenceDir`) | ui | Pass claims backed by screenshots; a PNG under `uiEvidenceMinBytes` (default 8192) is a blank page, not evidence |
 | **Git working tree** | verify-zone, scope | Which files changed — for the protected-zone and plan-scope guards |
 
@@ -133,15 +141,32 @@ just a source tree you get structural and pattern checks; each artifact you
 add (plan, tokens, resources, results, screenshots) turns one more
 "unverified" neutral into a real verdict.
 
+## How the checks read code
+
+Checks never pattern-match raw text. Every file is first reduced to
+three position-preserving views — a **code view** (string/template
+contents, comments and regex literals blanked to spaces; template
+`${...}` expressions kept, because they are code), a **comment view**,
+and a **string view** — plus a table of every string literal. Pattern
+checks run on the code view, so a sentence inside a string or comment
+can no longer fabricate a violation; checks whose subject lives in
+literals (URLs, storage keys, i18n keys, hex colors) read the literal
+table instead. Function sizes come from delimiter-matched spans, and
+imports form a resolved graph (aliases from `tsconfig`/`jsconfig`
+`paths`, extension and index probing, `require()` and dynamic
+`import()` included) — which is also how import cycles are detected.
+For `.vue`/`.svelte` files, the `<script>` blocks are extracted first
+with line numbers intact.
+
 ## What gets checked
 
 | Dimension | Checks |
 |---|---|
-| **structure** | Compile command (if configured; neutral otherwise), `any` / `@ts-ignore` suppressions, file/function length with file-type-aware split advice, **architecture import rules** (config-driven layer directions), **route isolation** for `src/app/<route>/` layouts |
-| **data** | Hardcoded credentials, plain `http://` URLs outside localhost, **i18n key completeness** against locale resources, **storage-key namespace** shape |
-| **logic** | Forbidden patterns (default: `debugger`), leftover `console.log`, TODO/FIXME pile-ups, **plan functional-point (FP) coverage** |
-| **ui** | `<img>` without `alt`, inline-style sprawl, **raw hex colors outside design-token files**, **design-token validity** (`var(--x)` must exist in the token source), **screenshot evidence sanity** (blank-page detection) |
-| **e2e** | **Real run results** (`{passed, failed}`) when provided; otherwise the share of source files with a sibling test, labeled as presence-only |
+| **structure** | Compile command (if configured; neutral otherwise), `any` / `@ts-ignore` suppressions (a suppression counts only when it leads its comment — a prose mention does not), file/function length with file-type-aware split advice, **architecture import rules** over the resolved import graph, **route isolation** for `src/app/<route>/` layouts, **import cycle detection** |
+| **data** | Hardcoded credentials, plain `http://` URLs outside localhost (matched in literal contents, so a URL in a comment is not an endpoint), **i18n key completeness** against locale resources, **storage-key namespace** shape |
+| **logic** | Forbidden patterns (default: `debugger`), leftover `console.log`, TODO/FIXME pile-ups (counted in comments, where they live), **plan functional-point (FP) coverage** |
+| **ui** | `<img>` without `alt`, inline-style sprawl, **raw hex colors outside design-token files**, **design-token validity** (`var(--x)` must exist in the token source — feed it the artifact your build consumes, e.g. the compiled CSS, not a source format it cannot read), **screenshot evidence sanity** (blank-page detection) |
+| **e2e** | A composite of up to three signals — **run** pass rate from a real test-results artifact (0.6), **coverage** mean from istanbul (0.25), test-file **presence** (0.15) — weights configurable in `rules.e2e.weights` and renormalized over the signals present; each signal is a named check carrying exactly its share of the deduction |
 
 ## Configuration
 
@@ -177,6 +202,24 @@ Every dimension threshold carries a `why` — a quality bar nobody can explain
 is a quality bar nobody will defend. Exemptions require a path, the rule
 names, and a reason; an exempted check shows up as *neutral* in the report,
 visible but not counted.
+
+Two more top-level settings: `exclude` — globs removed from scoring
+entirely (fixtures, generated output living inside scanned directories)
+— and `historyDir` — where run history accumulates (next section).
+
+## History and trend
+
+```bash
+ai-gate --history .gate-history     # or set "historyDir" in the config
+```
+
+Each run appends its full JSON report to the history directory under a
+timestamped name — history files are never overwritten — and the text
+report gains a **trend** section comparing against the previous run:
+per-dimension score deltas, the total delta, and verdict movement
+(`FAIL@canRun -> PASS` is called out explicitly). `--report <path>`
+additionally writes the current report to a specific path. Quality you
+cannot watch move is quality you are guessing about.
 
 ## Protected zone
 
@@ -235,7 +278,17 @@ More tools and writing from the same author: [maoxunxing.com](https://maoxunxing
 npm test          # run the test suite
 npm run demo:bad
 npm run demo:good
+npm run gate:self # the gate grades this repository itself
 ```
+
+This repository gates itself: the root `gate.config.json` runs under
+the public defaults (fixtures and templates excluded; the CLI's own
+stdout is a registered exemption, because for a CLI, printing *is* the
+product), and a test in the suite asserts the self-gate passes — so CI
+enforces it. The gate was also calibrated against a real production
+project; the write-up — including the two findings that were the
+gate's own fault and were fixed — is in
+[docs/calibration.md](docs/calibration.md).
 
 ## License
 

@@ -5,8 +5,24 @@ import { DEFAULT_CONFIG, mergeConfig } from "../src/config.js";
 import { evaluate, formatReport } from "../src/evaluate.js";
 import { verifyZone } from "../src/zone.js";
 import { checkScope } from "../src/scope.js";
+import {
+  appendHistory,
+  computeTrend,
+  readPreviousReport,
+} from "../src/history.js";
 
-const args = process.argv.slice(2);
+const rawArgs = process.argv.slice(2);
+const VALUE_FLAGS = ["--history", "--report"];
+const flagValues = {};
+const args = [];
+for (let i = 0; i < rawArgs.length; i++) {
+  if (VALUE_FLAGS.includes(rawArgs[i])) {
+    flagValues[rawArgs[i]] = rawArgs[i + 1];
+    i++;
+  } else {
+    args.push(rawArgs[i]);
+  }
+}
 const json = args.includes("--json");
 const positional = args.filter((a) => !a.startsWith("--"));
 const command = positional[0] || ".";
@@ -26,6 +42,11 @@ Usage:
   ai-gate scope <plan.md> [path] Block if changes fall outside the plan's
                                  declared editable scope
   ai-gate --json [path]          Machine-readable report (for CI)
+  ai-gate --history <dir> [path] Append the JSON report to a history
+                                 directory and print a trend vs the
+                                 previous run (or set "historyDir" in
+                                 gate.config.json)
+  ai-gate --report <path> [path] Also write the JSON report to <path>
 
 Exit codes: 0 = pass, 1 = blocked/failed, 2 = usage/config error`);
 }
@@ -127,7 +148,23 @@ if (command === "scope") {
 }
 
 const root = resolve(command);
-const report = evaluate(root, loadConfig(root));
+const config = loadConfig(root);
+const report = evaluate(root, config);
+
+// History: compare against the previous run first, then append this
+// one (immutable, timestamped, never overwritten).
+const historyDir = flagValues["--history"] || config.historyDir;
+if (historyDir) {
+  const dir = resolve(root, historyDir);
+  const trend = computeTrend(readPreviousReport(dir), report);
+  if (trend) report.trend = trend;
+  appendHistory(dir, report);
+}
+if (flagValues["--report"]) {
+  const reportPath = resolve(flagValues["--report"]);
+  mkdirSync(dirname(reportPath), { recursive: true });
+  writeFileSync(reportPath, JSON.stringify(report, null, 2) + "\n");
+}
 if (json) console.log(JSON.stringify(report, null, 2));
 else console.log(formatReport(report));
 process.exit(report.passed ? 0 : 1);

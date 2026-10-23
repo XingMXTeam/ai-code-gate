@@ -7,8 +7,12 @@
 // reported as skipped, mirroring how a delivery pipeline behaves.
 
 export const DEFAULT_CONFIG = {
-  extensions: [".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"],
+  extensions: [".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".vue", ".svelte"],
   ignore: ["node_modules", ".git", "dist", "build", "coverage", ".next"],
+  // Project-relative globs whose files are excluded from scoring
+  // entirely (fixtures, vendored code, generated output that is not in
+  // `ignore` because it lives inside scanned directories).
+  exclude: [],
 
   // Optional pre-check: a shell command that must exit 0. When it is not
   // configured, the compile check reports as "neutral" instead of passing
@@ -91,6 +95,10 @@ export const DEFAULT_CONFIG = {
     },
     e2e: {
       targetTestRatio: 0.5,
+      // How the e2e score combines its signals when several are present.
+      // Weights renormalize over the signals actually available: a real
+      // run dominates, coverage supports, presence is the weakest claim.
+      weights: { run: 0.6, coverage: 0.25, presence: 0.15 },
     },
   },
 
@@ -105,10 +113,17 @@ export const DEFAULT_CONFIG = {
     plan: null, // plan markdown: FP ids (logic coverage) are read from it
     designTokens: null, // tokens file (.json with "--name" keys, or .css with --var declarations)
     i18n: null, // { resources: ["path/to/locale.json", ...], callPattern?: regex source }
-    e2eResults: null, // JSON file: { "passed": n, "failed": n } from a real test run
+    testResults: null, // test-runner report: {passed, failed} | Jest/Vitest JSON | Playwright JSON
+    e2eResults: null, // deprecated alias of testResults (same formats)
+    coverage: null, // istanbul coverage-summary.json (feeds the e2e dimension)
     uiEvidenceDir: null, // directory of UI screenshots used as pass evidence
     uiEvidenceMinBytes: 8192, // a screenshot smaller than this is a blank page, not evidence
   },
+
+  // When set, every run appends its full JSON report to this directory
+  // (timestamped, never overwritten) and the text report gains a trend
+  // section comparing against the previous run. CLI --history overrides.
+  historyDir: null,
 
   // Files an automated agent must not change without a human confirmation
   // (see `ai-gate verify-zone`). Typically: this config, the gate itself,
@@ -120,6 +135,8 @@ export function mergeConfig(userConfig = {}) {
   const merged = structuredClone(DEFAULT_CONFIG);
   if (userConfig.extensions) merged.extensions = userConfig.extensions;
   if (userConfig.ignore) merged.ignore = userConfig.ignore;
+  if (userConfig.exclude) merged.exclude = userConfig.exclude;
+  if (userConfig.historyDir !== undefined) merged.historyDir = userConfig.historyDir;
   if (userConfig.compileCommand !== undefined)
     merged.compileCommand = userConfig.compileCommand;
   if (userConfig.gates) merged.gates = userConfig.gates;

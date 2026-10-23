@@ -1,13 +1,15 @@
 import { execSync } from "node:child_process";
 import { collectFiles, isTestFile } from "./scan.js";
 import {
-  checkStructure,
-  checkLogic,
-  checkData,
-  checkUi,
-  checkE2e,
   applyExemptions,
+  buildContext,
+  checkData,
+  checkE2e,
+  checkLogic,
+  checkStructure,
+  checkUi,
 } from "./rules.js";
+import { formatTrend } from "./history.js";
 
 const DIMENSIONS = ["structure", "data", "logic", "ui", "e2e"];
 
@@ -19,19 +21,17 @@ const CHECKS = {
   e2e: (files, cfg, ctx) => checkE2e(files, cfg.rules.e2e, isTestFile, ctx),
 };
 
-export function evaluate(root, config) {
-  const files = collectFiles(root, config);
-  const ctx = { compiled: null, root, inputs: config.inputs };
-  if (config.compileCommand) {
-    try {
-      execSync(config.compileCommand, { cwd: root, stdio: "pipe" });
-      ctx.compiled = true;
-    } catch {
-      ctx.compiled = false;
-    }
+function runCompile(root, config, ctx) {
+  if (!config.compileCommand) return;
+  try {
+    execSync(config.compileCommand, { cwd: root, stdio: "pipe" });
+    ctx.compiled = true;
+  } catch {
+    ctx.compiled = false;
   }
+}
 
-  // 1. Score every dimension.
+function scoreDimensions(files, config, ctx) {
   const dimensions = {};
   for (const dim of DIMENSIONS) {
     let checks = CHECKS[dim](files, config, ctx);
@@ -48,11 +48,10 @@ export function evaluate(root, config) {
       checks,
     };
   }
-  const totalScore = Math.round(
-    DIMENSIONS.reduce((sum, d) => sum + dimensions[d].score, 0) / DIMENSIONS.length
-  );
+  return dimensions;
+}
 
-  // 2. Evaluate named gates in order; short-circuit at the first failure.
+function evaluateGates(config, dimensions) {
   const gates = [];
   let shortCircuitedAt = null;
   for (const gate of config.gates) {
@@ -63,8 +62,7 @@ export function evaluate(root, config) {
     const unmet = [];
     for (const [dim, min] of Object.entries(gate.requires)) {
       const need = min ?? config.dimensions[dim].threshold;
-      const got = dimensions[dim].score;
-      if (got < need) unmet.push(`${dim} score ${got} < ${need}`);
+      if (dimensions[dim].score < need) unmet.push(`${dim} score ${dimensions[dim].score} < ${need}`);
     }
     const passed = unmet.length === 0;
     gates.push({
@@ -79,9 +77,12 @@ export function evaluate(root, config) {
     });
     if (!passed) shortCircuitedAt = gate.id;
   }
+  return { gates, shortCircuitedAt };
+}
 
-  // 3. Explain the failure: which checks, in which dimension, and how the
-  // fixes group up (the remediation view an agent or human works from).
+// Explain the failure: which checks, in which dimension, and how the
+// fixes group up (the remediation view an agent or human works from).
+function summarize(dimensions) {
   const failedReasons = [];
   const buckets = {};
   for (const dim of DIMENSIONS) {
@@ -97,12 +98,27 @@ export function evaluate(root, config) {
   const remediation = Object.entries(buckets)
     .map(([rule, b]) => ({ rule, count: b.count, points: b.points, dimensions: [...b.dims] }))
     .sort((a, b) => b.points - a.points);
-
-  const neutrals = DIMENSIONS.flatMap((dim) =>
+  const notCovered = DIMENSIONS.flatMap((dim) =>
     dimensions[dim].checks
       .filter((c) => c.passed === null)
       .map((c) => `${dim}/${c.name}: ${c.message}`)
   );
+  return { failedReasons, remediation, notCovered };
+}
+
+export function evaluate(root, config) {
+  const files = collectFiles(root, config);
+  const ctx = buildContext(root, config, files);
+  runCompile(root, config, ctx);
+
+  // 1. Score every dimension. 2. Evaluate named gates in order;
+  // short-circuit at the first failure. 3. Summarize for remediation.
+  const dimensions = scoreDimensions(files, config, ctx);
+  const totalScore = Math.round(
+    DIMENSIONS.reduce((sum, d) => sum + dimensions[d].score, 0) / DIMENSIONS.length
+  );
+  const { gates, shortCircuitedAt } = evaluateGates(config, dimensions);
+  const { failedReasons, remediation, notCovered } = summarize(dimensions);
 
   return {
     root,
@@ -114,7 +130,7 @@ export function evaluate(root, config) {
     gates,
     failedReasons,
     remediation,
-    notCovered: neutrals,
+    notCovered,
     howToDebug: [
       "Treat the first failed gate as the only result. Later gates did not decide anything.",
       "Work the remediation list top-down: it is sorted by points at stake.",
@@ -153,6 +169,7 @@ export function formatReport(report) {
     out.push("  not covered / unverified:");
     for (const n of report.notCovered) out.push(`    - ${n}`);
   }
+  if (report.trend) out.push(formatTrend(report.trend));
   out.push("");
   out.push(
     report.passed
