@@ -79,15 +79,37 @@ Verdict: **PASS only if all four gates pass.** The report still shows every
 dimension's score and every failed check after a short-circuit — the gates
 decide, the dimensions explain.
 
+## Inputs
+
+Source code alone cannot prove most of what the gates claim. The full input
+set is:
+
+| Input | Feeds | Proves |
+|---|---|---|
+| **Source tree** (the scanned directory) | all dimensions | The code itself: sizes, imports, patterns, usages |
+| **`gate.config.json`** | all dimensions | Thresholds (each with a `why`), gate definitions, rules, exemptions, protected paths |
+| **Compile command** (optional, configured) | structure | The code actually compiles; unconfigured → the check reports *neutral*, never a silent pass |
+| **Plan document** (`inputs.plan`) | logic, scope guard | Functional-point (FP) coverage: every FP id in the plan must be referenced in code/tests; also the plan's declared editable scope |
+| **Design-token source** (`inputs.designTokens`) | ui | Every `var(--x)` used in code must exist in the token source (`.json` with `--name` keys, or `.css` with `--var` declarations) |
+| **i18n resources** (`inputs.i18n.resources`) | data | Every i18n key called in code exists in the locale resources; storage keys follow a `{page}.{entity}.{field}` namespace shape |
+| **E2E results** (`inputs.e2eResults`) | e2e | A real run's outcome (`{"passed": n, "failed": n}`). Without it, e2e falls back to test-file *presence* and says so |
+| **UI evidence screenshots** (`inputs.uiEvidenceDir`) | ui | Pass claims backed by screenshots; a PNG under `uiEvidenceMinBytes` (default 8192) is a blank page, not evidence |
+| **Git working tree** | verify-zone, scope | Which files changed — for the protected-zone and plan-scope guards |
+
+The rule of thumb: **a dimension is only as strong as its inputs.** With
+just a source tree you get structural and pattern checks; each artifact you
+add (plan, tokens, resources, results, screenshots) turns one more
+"unverified" neutral into a real verdict.
+
 ## What gets checked
 
 | Dimension | Checks |
 |---|---|
-| **structure** | Compile command (if configured; neutral otherwise), file/function length with file-type-aware split advice, **architecture import rules** (config-driven layer directions), **route isolation** for `src/app/<route>/` layouts |
-| **data** | Hardcoded credentials, plain `http://` URLs outside localhost |
-| **logic** | Forbidden patterns (default: `debugger`), leftover `console.log`, TODO/FIXME pile-ups |
-| **ui** | `<img>` without `alt`, inline-style sprawl, **raw hex colors outside design-token files** |
-| **e2e** | Share of source files that have a sibling test file |
+| **structure** | Compile command (if configured; neutral otherwise), `any` / `@ts-ignore` suppressions, file/function length with file-type-aware split advice, **architecture import rules** (config-driven layer directions), **route isolation** for `src/app/<route>/` layouts |
+| **data** | Hardcoded credentials, plain `http://` URLs outside localhost, **i18n key completeness** against locale resources, **storage-key namespace** shape |
+| **logic** | Forbidden patterns (default: `debugger`), leftover `console.log`, TODO/FIXME pile-ups, **plan functional-point (FP) coverage** |
+| **ui** | `<img>` without `alt`, inline-style sprawl, **raw hex colors outside design-token files**, **design-token validity** (`var(--x)` must exist in the token source), **screenshot evidence sanity** (blank-page detection) |
+| **e2e** | **Real run results** (`{passed, failed}`) when provided; otherwise the share of source files with a sibling test, labeled as presence-only |
 
 ## Configuration
 
@@ -186,3 +208,8 @@ npm run demo:good
 ## License
 
 MIT
+
+> Note: the examples' `ui-evidence/*.png` screenshots are generated fixtures
+> (the good one is a 10 KB file, the bad one a 128-byte blank) and are not
+> tracked in git — recreate them with any PNG of the right size to reproduce
+> the evidence checks locally.

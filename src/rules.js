@@ -5,6 +5,8 @@
 // an unverified check must never be silently counted as a pass.
 
 import { globMatch } from "./config.js";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { join } from "node:path";
 
 function linesOf(content) {
   return content.split("\n");
@@ -144,6 +146,23 @@ export function checkStructure(files, rules, ctx) {
     }
   }
 
+  // L1 language layer: the type system is the first harness. `any` and
+  // ts-ignore are holes punched in it.
+  for (const file of files) {
+    const anys = countOccurrences(file.content, /:\s*any\b|as\s+any\b|<\s*any\s*>/g);
+    if (anys > 0) {
+      checks.push(
+        violation("no-any", `${anys} use(s) of \`any\`. Every \`any\` is a place the compiler was told to look away.`, file.rel, Math.min(6 * anys, 18))
+      );
+    }
+    const ignores = countOccurrences(file.content, /@ts-(ignore|nocheck)/g);
+    if (ignores > 0) {
+      checks.push(
+        violation("no-ts-suppress", `${ignores} @ts-ignore/@ts-nocheck suppression(s). Silencing the compiler is not fixing the error.`, file.rel, Math.min(8 * ignores, 16))
+      );
+    }
+  }
+
   if (!checks.some((c) => c.passed === false))
     checks.push(check("structure-rules", true, "No structural violations found."));
   return checks;
@@ -151,7 +170,7 @@ export function checkStructure(files, rules, ctx) {
 
 // --- data -------------------------------------------------------------------
 
-export function checkData(files, rules) {
+export function checkData(files, rules, ctx = {}) {
   const checks = [];
   const secretRe = new RegExp(rules.secretPattern, "i");
   for (const file of files) {
@@ -170,6 +189,59 @@ export function checkData(files, rules) {
       }
     });
   }
+  // Storage keys must be namespaced ({page}.{entity}.{field} shape):
+  // un-namespaced keys collide across pages and leak across features.
+  const storageRe = /(?:localStorage|sessionStorage)\.(?:getItem|setItem|removeItem)\(\s*['"`]([^'"`]+)['"`]/g;
+  for (const file of files) {
+    for (const m of file.content.matchAll(storageRe)) {
+      if (!/^[\w-]+\.[\w-]+\.[\w-]+/.test(m[1])) {
+        checks.push(
+          violation("storage-key-namespace", `Storage key "${m[1]}" is not namespaced. Use a {page}.{entity}.{field} shape so keys cannot collide across features.`, file.rel, 5)
+        );
+      }
+    }
+  }
+
+  // i18n completeness: keys called in code must exist in the resources.
+  // Needs the resource files as input — code alone cannot prove this.
+  const i18n = ctx.inputs?.i18n;
+  if (i18n && Array.isArray(i18n.resources)) {
+    try {
+      const known = new Set();
+      const flatten = (obj, prefix) => {
+        for (const [k, v] of Object.entries(obj)) {
+          const key = prefix ? `${prefix}.${k}` : k;
+          if (v && typeof v === "object") flatten(v, key);
+          else known.add(key);
+        }
+      };
+      for (const res of i18n.resources) {
+        flatten(JSON.parse(readFileSync(join(ctx.root, res), "utf8")), "");
+      }
+      const callRe = new RegExp(
+        i18n.callPattern || "(?:\\bt|\\$t|i18n\\.t)\\(\\s*['\"`]([^'\"`]+)['\"`]",
+        "g"
+      );
+      const called = new Map();
+      for (const file of files) {
+        for (const m of file.content.matchAll(callRe)) {
+          if (!called.has(m[1])) called.set(m[1], file.rel);
+        }
+      }
+      for (const [key, where] of called) {
+        if (!known.has(key)) {
+          checks.push(
+            violation("i18n-missing-key", `i18n key "${key}" is called in code but missing from the resource files. A missing key renders as a raw string in production.`, where, 6)
+          );
+        }
+      }
+      if (![...called.keys()].some((k) => !known.has(k)))
+        checks.push(check("i18n-complete", true, `All ${called.size} called i18n key(s) exist in the resources.`));
+    } catch (err) {
+      checks.push(check("i18n-complete", null, `i18n resources could not be loaded (${err.message}) — completeness unverified.`));
+    }
+  }
+
   if (!checks.some((c) => c.passed === false))
     checks.push(check("data-rules", true, "No credential or endpoint violations found."));
   return checks;
@@ -177,7 +249,7 @@ export function checkData(files, rules) {
 
 // --- logic ------------------------------------------------------------------
 
-export function checkLogic(files, rules) {
+export function checkLogic(files, rules, ctx = {}) {
   const checks = [];
   const forbidden = (rules.forbiddenPatterns || []).map((p) => new RegExp(p, "g"));
   for (const file of files) {
@@ -203,6 +275,31 @@ export function checkLogic(files, rules) {
       }
     });
   }
+  // FP coverage: the plan's functional points are the contract. Each FP id
+  // in the plan must be referenced somewhere in code or tests — an FP with
+  // no reference was planned and silently not built.
+  if (ctx.inputs?.plan) {
+    try {
+      const planText = readFileSync(join(ctx.root, ctx.inputs.plan), "utf8");
+      const fpIds = [...new Set([...planText.matchAll(/\bFP-\d+(?:-\d+)?\b/g)].map((m) => m[0]))];
+      if (fpIds.length === 0) {
+        checks.push(check("fp-coverage", null, "Plan configured but contains no FP ids — coverage unverified."));
+      } else {
+        const corpus = files.map((f) => f.content).join("\n");
+        const missing = fpIds.filter((id) => !corpus.includes(id));
+        for (const id of missing) {
+          checks.push(
+            violation("fp-not-covered", `Plan functional point ${id} is not referenced anywhere in code or tests. Either it was not built, or it is not traceable — both fail the contract.`, ctx.inputs.plan, 8)
+          );
+        }
+        if (missing.length === 0)
+          checks.push(check("fp-coverage", true, `All ${fpIds.length} plan functional point(s) are referenced in code/tests.`));
+      }
+    } catch (err) {
+      checks.push(check("fp-coverage", null, `Plan could not be read (${err.message}) — coverage unverified.`));
+    }
+  }
+
   if (!checks.some((c) => c.passed === false))
     checks.push(check("logic-rules", true, "No leftover debug output or deferred-work pile-ups found."));
   return checks;
@@ -210,7 +307,7 @@ export function checkLogic(files, rules) {
 
 // --- ui ---------------------------------------------------------------------
 
-export function checkUi(files, rules) {
+export function checkUi(files, rules, ctx = {}) {
   const checks = [];
   const uiFiles = files.filter((f) => /\.(jsx|tsx|css|scss)$/.test(f.rel));
   for (const file of uiFiles) {
@@ -238,6 +335,69 @@ export function checkUi(files, rules) {
       }
     }
   }
+  // Design-token validity: var(--x) usages must exist in the token source.
+  // Needs the token file as input — a made-up token name compiles fine and
+  // silently renders as nothing.
+  if (ctx.inputs?.designTokens) {
+    try {
+      const tokenPath = join(ctx.root, ctx.inputs.designTokens);
+      const raw = readFileSync(tokenPath, "utf8");
+      const known = new Set();
+      if (ctx.inputs.designTokens.endsWith(".css")) {
+        for (const m of raw.matchAll(/(--[\w-]+)\s*:/g)) known.add(m[1]);
+      } else {
+        const parsed = JSON.parse(raw);
+        const collect = (node) => {
+          if (Array.isArray(node)) node.forEach((v) => (typeof v === "string" ? known.add(v) : collect(v)));
+          else if (node && typeof node === "object")
+            for (const [k, v] of Object.entries(node)) {
+              if (k.startsWith("--")) known.add(k);
+              collect(v);
+            }
+        };
+        collect(parsed);
+      }
+      const reported = new Set();
+      for (const file of uiFiles) {
+        for (const m of file.content.matchAll(/var\(\s*(--[\w-]+)/g)) {
+          if (!known.has(m[1]) && !reported.has(`${file.rel}:${m[1]}`)) {
+            reported.add(`${file.rel}:${m[1]}`);
+            checks.push(
+              violation("unknown-design-token", `var(${m[1]}) is used but not defined in the design-token source. An undefined token renders as an empty value.`, file.rel, 5)
+            );
+          }
+        }
+      }
+      if (reported.size === 0)
+        checks.push(check("token-validity", true, `All var(--*) usages resolve against ${known.size} token(s) in the token source.`));
+    } catch (err) {
+      checks.push(check("token-validity", null, `Design-token source could not be loaded (${err.message}) — validity unverified.`));
+    }
+  }
+
+  // Screenshot evidence: a pass claim backed by a near-empty PNG is backed
+  // by a blank page. Tiny screenshots are not evidence.
+  if (ctx.inputs?.uiEvidenceDir) {
+    const dir = join(ctx.root, ctx.inputs.uiEvidenceDir);
+    const minBytes = ctx.inputs.uiEvidenceMinBytes ?? 8192;
+    if (!existsSync(dir)) {
+      checks.push(check("ui-evidence", null, `UI evidence directory ${ctx.inputs.uiEvidenceDir} does not exist — screenshot evidence unverified.`));
+    } else {
+      const pngs = readdirSync(dir).filter((f) => f.endsWith(".png"));
+      if (pngs.length === 0) {
+        checks.push(check("ui-evidence", null, "No screenshots in the UI evidence directory — nothing was evidenced."));
+      }
+      for (const png of pngs) {
+        const size = statSync(join(dir, png)).size;
+        if (size < minBytes) {
+          checks.push(
+            violation("blank-screenshot-evidence", `Screenshot ${png} is ${size} bytes (< ${minBytes}). A page that renders compresses larger than this — this is a blank page filed as evidence.`, `${ctx.inputs.uiEvidenceDir}/${png}`, 8)
+          );
+        }
+      }
+    }
+  }
+
   if (!checks.some((c) => c.passed === false))
     checks.push(check("ui-rules", true, "No accessibility or design-token violations found."));
   return checks;
@@ -245,8 +405,34 @@ export function checkUi(files, rules) {
 
 // --- e2e --------------------------------------------------------------------
 
-export function checkE2e(files, rules, isTestFile) {
+export function checkE2e(files, rules, isTestFile, ctx = {}) {
   const checks = [];
+
+  // Real run results beat presence: when a results file is provided, the
+  // dimension is scored by what the test run actually did.
+  if (ctx.inputs?.e2eResults) {
+    try {
+      const res = JSON.parse(readFileSync(join(ctx.root, ctx.inputs.e2eResults), "utf8"));
+      const passed = Number(res.passed) || 0;
+      const failed = Number(res.failed) || 0;
+      const total = passed + failed;
+      if (total === 0) {
+        checks.push(check("e2e-results", null, "E2E results file contains no tests — run unverified."));
+      } else if (failed > 0) {
+        const rate = passed / total;
+        checks.push(
+          violation("e2e-failures", `E2E run: ${passed}/${total} passed, ${failed} failed. A red run is a red run, however good the code looks.`, ctx.inputs.e2eResults, Math.max(10, Math.round(60 * (1 - rate))))
+        );
+      } else {
+        checks.push(check("e2e-results", true, `E2E run: all ${total} test(s) passed.`));
+      }
+      return checks;
+    } catch (err) {
+      checks.push(check("e2e-results", null, `E2E results could not be loaded (${err.message}) — falling back to test-presence scoring.`));
+    }
+  } else {
+    checks.push(check("e2e-results", null, "No e2eResults input — scoring test presence only, not an actual run. Provide a results file ({passed, failed}) for run-based scoring."));
+  }
   const sources = files.filter((f) => !isTestFile(f.rel));
   const tests = files.filter((f) => isTestFile(f.rel));
   const testBaseNames = new Set(

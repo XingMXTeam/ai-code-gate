@@ -5,9 +5,13 @@ import { dirname, join } from "node:path";
 import { mergeConfig, globMatch } from "../src/config.js";
 import { evaluate } from "../src/evaluate.js";
 import { parseEditableScope, matchScope } from "../src/scope.js";
+import { readFileSync } from "node:fs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const ex = (name) => join(here, "..", "examples", name);
+// Load each example's own gate.config.json, the same way the CLI does.
+const cfgFor = (name) =>
+  mergeConfig(JSON.parse(readFileSync(join(ex(name), "gate.config.json"), "utf8")));
 
 test("good example passes all gates", () => {
   const report = evaluate(ex("good"), mergeConfig({}));
@@ -29,7 +33,7 @@ test("bad example is caught for a hardcoded secret", () => {
 });
 
 test("bad example violates architecture layer rules", () => {
-  const report = evaluate(ex("bad"), mergeConfig({}));
+  const report = evaluate(ex("bad"), cfgFor("bad"));
   const names = report.failedReasons.map((r) => r.check);
   assert.ok(names.includes("import-layer"));
   assert.ok(names.includes("cross-route-import"));
@@ -70,4 +74,28 @@ test("exemptions neutralize a failed check with a reason", () => {
   const secret = report.dimensions.data.checks.find((c) => c.name === "hardcoded-secret");
   assert.equal(secret.passed, null);
   assert.ok(secret.message.includes("exempted"));
+});
+
+test("input-driven checks: plan, tokens, i18n, storage, evidence", () => {
+  const report = evaluate(ex("bad"), cfgFor("bad"));
+  const names = report.failedReasons.map((r) => r.check);
+  for (const expected of [
+    "fp-not-covered",
+    "unknown-design-token",
+    "i18n-missing-key",
+    "storage-key-namespace",
+    "no-any",
+    "blank-screenshot-evidence",
+  ]) {
+    assert.ok(names.includes(expected), `expected ${expected} in ${names.join(",")}`);
+  }
+});
+
+test("e2e is scored from real run results when provided", () => {
+  const bad = evaluate(ex("bad"), cfgFor("bad"));
+  assert.ok(bad.failedReasons.some((r) => r.check === "e2e-failures"));
+  const good = evaluate(ex("good"), cfgFor("good"));
+  const e2eCheck = good.dimensions.e2e.checks.find((c) => c.name === "e2e-results");
+  assert.equal(e2eCheck.passed, true);
+  assert.equal(good.dimensions.e2e.score, 100);
 });

@@ -1,3 +1,4 @@
+// FP-2
 import { test } from "node:test";
 import assert from "node:assert";
 import { formatPrice } from "./format.ts";

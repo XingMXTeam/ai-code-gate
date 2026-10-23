@@ -98,6 +98,18 @@ export const DEFAULT_CONFIG = {
   // reason }. An exemption without a reason is just a hole.
   exemptions: [],
 
+  // External inputs the checks are evaluated against. Source code alone
+  // cannot prove i18n completeness, FP coverage, token validity, or that
+  // e2e tests actually ran — those verdicts need these artifacts.
+  inputs: {
+    plan: null, // plan markdown: FP ids (logic coverage) are read from it
+    designTokens: null, // tokens file (.json with "--name" keys, or .css with --var declarations)
+    i18n: null, // { resources: ["path/to/locale.json", ...], callPattern?: regex source }
+    e2eResults: null, // JSON file: { "passed": n, "failed": n } from a real test run
+    uiEvidenceDir: null, // directory of UI screenshots used as pass evidence
+    uiEvidenceMinBytes: 8192, // a screenshot smaller than this is a blank page, not evidence
+  },
+
   // Files an automated agent must not change without a human confirmation
   // (see `ai-gate verify-zone`). Typically: this config, the gate itself,
   // CI definitions.
@@ -112,6 +124,7 @@ export function mergeConfig(userConfig = {}) {
     merged.compileCommand = userConfig.compileCommand;
   if (userConfig.gates) merged.gates = userConfig.gates;
   if (userConfig.exemptions) merged.exemptions = userConfig.exemptions;
+  if (userConfig.inputs) Object.assign(merged.inputs, userConfig.inputs);
   if (userConfig.protectedPaths) merged.protectedPaths = userConfig.protectedPaths;
   if (userConfig.dimensions) {
     for (const [dim, entry] of Object.entries(userConfig.dimensions)) {

@@ -13,15 +13,15 @@ const DIMENSIONS = ["structure", "data", "logic", "ui", "e2e"];
 
 const CHECKS = {
   structure: (files, cfg, ctx) => checkStructure(files, cfg.rules.structure, ctx),
-  data: (files, cfg) => checkData(files, cfg.rules.data),
-  logic: (files, cfg) => checkLogic(files, cfg.rules.logic),
-  ui: (files, cfg) => checkUi(files, cfg.rules.ui),
-  e2e: (files, cfg) => checkE2e(files, cfg.rules.e2e, isTestFile),
+  data: (files, cfg, ctx) => checkData(files, cfg.rules.data, ctx),
+  logic: (files, cfg, ctx) => checkLogic(files, cfg.rules.logic, ctx),
+  ui: (files, cfg, ctx) => checkUi(files, cfg.rules.ui, ctx),
+  e2e: (files, cfg, ctx) => checkE2e(files, cfg.rules.e2e, isTestFile, ctx),
 };
 
 export function evaluate(root, config) {
   const files = collectFiles(root, config);
-  const ctx = { compiled: null };
+  const ctx = { compiled: null, root, inputs: config.inputs };
   if (config.compileCommand) {
     try {
       execSync(config.compileCommand, { cwd: root, stdio: "pipe" });

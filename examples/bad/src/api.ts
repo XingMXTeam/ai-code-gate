@@ -77,3 +77,5 @@ export function renderSummary(campaign) {
   html += "<div>" + campaign.field59 + "</div>";
   return html;
 }
+
+const looseConfig: any = { retries: "lots" };

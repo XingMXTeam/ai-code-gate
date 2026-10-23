@@ -1,3 +1,4 @@
+// FP-1: fetch campaign and render a summary
 const baseUrl = process.env.PROMO_API_BASE ?? "https://api.example.com/v1";
 
 export async function fetchCampaign(id: string) {
