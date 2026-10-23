@@ -1,9 +1,5 @@
 <p align="right"><a href="./README.md">English</a> · <strong>简体中文</strong></p>
 
-<p align="center">
-  <img src="assets/mascot.svg" width="168" height="168" alt="ai-code-gate 吉祥物——水豚质检员">
-</p>
-
 # ai-code-gate
 
 <p align="center">

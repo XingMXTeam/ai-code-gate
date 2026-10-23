@@ -1,9 +1,5 @@
 <p align="right"><strong>English</strong> · <a href="./README.zh-CN.md">简体中文</a></p>
 
-<p align="center">
-  <img src="assets/mascot.svg" width="168" height="168" alt="ai-code-gate mascot — the capybara inspector">
-</p>
-
 # ai-code-gate
 
 <p align="center">
